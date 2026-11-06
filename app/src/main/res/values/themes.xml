@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.Bookkeeping" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

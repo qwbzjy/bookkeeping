@@ -1,0 +1,15 @@
+# 构建产物
+.gradle/
+.kotlin/
+build/
+app/build/
+
+# 本机环境配置（含 SDK 路径，不随仓库走）
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# 会话本地文件
+.claude/

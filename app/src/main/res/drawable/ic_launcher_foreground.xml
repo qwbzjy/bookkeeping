@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 记账本图标：白色账本 + 一枚硬币 -->
+    <group
+        android:scaleX="0.5"
+        android:scaleY="0.5"
+        android:translateX="27"
+        android:translateY="27">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M27,27h54v54h-54z" />
+        <path
+            android:fillColor="#00696E"
+            android:pathData="M35,35h38v6h-38z M35,45h38v6h-38z M35,55h24v6h-24z" />
+        <path
+            android:fillColor="#FFB300"
+            android:pathData="M63,54 m-9,0 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0"
+            android:strokeColor="#FFFFFF"
+            android:strokeWidth="2" />
+    </group>
+</vector>
