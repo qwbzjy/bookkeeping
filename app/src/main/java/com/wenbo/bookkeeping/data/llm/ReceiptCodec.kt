@@ -7,6 +7,7 @@ import com.wenbo.bookkeeping.domain.model.TxCategory
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
+import java.time.LocalDate
 
 /**
  * 票据识别结果：已换算为可入表单的形态。
@@ -28,8 +29,9 @@ object ReceiptCodec {
     private val receiptJson = Json { ignoreUnknownKeys = true }
 
     /** 识别指令：要求逐条列出明细行，只返回 JSON。枚举列表由 TxCategory 生成。 */
-    fun prompt(): String {
+    fun prompt(todayEpochDay: Long = LocalDate.now().toEpochDay()): String {
         val categories = TxCategory.entries.joinToString(", ") { "${it.name} ${it.label}" }
+        val today = LocalDate.ofEpochDay(todayEpochDay).toString()
         return """
             你是记账助手。请识别图片中的票据、账单或支付截图，逐条列出每一笔明细
             （如购物小票的每个商品行、外卖订单的每一项、账单的每个分项）。
@@ -39,7 +41,8 @@ object ReceiptCodec {
             - type："EXPENSE"（支出）或 "INCOME"（收入）
             - amount：金额（元），字符串，最多两位小数，不含货币符号
             - category：从以下枚举中选最匹配的一个：$categories
-            - date：该明细的日期，格式 yyyy-MM-dd；看不出日期时用今天
+            - date：该明细的日期，格式 yyyy-MM-dd。今天的日期是 $today；
+              票据上没有印年份、年份模糊或难以确认时，一律按今天的年份
             - note：该明细的品名或摘要，不超过 30 字
             - 无法拆分明细时（如单笔转账截图），items 里只放一条
         """.trimIndent()
@@ -101,9 +104,22 @@ object ReceiptCodec {
             type = type,
             amountMinor = amountMinor,
             category = matchCategory(category, type),
-            dateEpochDay = date?.let { MonthUtils.isoToDate(it) } ?: todayEpochDay,
+            dateEpochDay = saneDate(date?.let { MonthUtils.isoToDate(it) }, todayEpochDay),
             note = note.orEmpty().take(50),
         )
+    }
+
+    /**
+     * 日期钳制：未来日期（> 明天）或超过 90 天前的日期几乎必然是模型误读年份
+     * （票据通常只印月日），回退到今天，保证记录落在当前月可见。
+     */
+    private fun saneDate(parsed: Long?, todayEpochDay: Long): Long {
+        val date = parsed ?: todayEpochDay
+        return when {
+            date > todayEpochDay + 1 -> todayEpochDay
+            date < todayEpochDay - 90 -> todayEpochDay
+            else -> date
+        }
     }
 
     private fun ItemJson.amountMinor(): Long? {

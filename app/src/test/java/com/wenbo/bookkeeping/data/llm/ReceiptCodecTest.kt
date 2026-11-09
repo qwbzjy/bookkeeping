@@ -126,6 +126,18 @@ class ReceiptCodecTest {
     }
 
     @Test
+    fun `implausible dates clamp to today`() {
+        // 一年前（模型误读年份）
+        val yearAgo = today - 366
+        assertEquals(today, ReceiptCodec.parseItems("""{"amount":"10","date":"2025-11-13"}""", today)[0].dateEpochDay)
+        // 未来日期
+        assertEquals(today, ReceiptCodec.parseItems("""{"amount":"10","date":"2030-01-01"}""", today)[0].dateEpochDay)
+        // 近期日期保留（10 天前）
+        val tenDaysAgo = LocalDate.ofEpochDay(today - 10).toString()
+        assertEquals(today - 10, ReceiptCodec.parseItems("""{"amount":"10","date":"$tenDaysAgo"}""", today)[0].dateEpochDay)
+    }
+
+    @Test
     fun `parse defaults type to expense`() {
         assertEquals(TransactionType.EXPENSE, ReceiptCodec.parseItems("""{"amount":"10"}""", today)[0].type)
     }
