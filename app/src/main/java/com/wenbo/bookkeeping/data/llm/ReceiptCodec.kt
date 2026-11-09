@@ -27,19 +27,21 @@ object ReceiptCodec {
 
     private val receiptJson = Json { ignoreUnknownKeys = true }
 
-    /** 识别指令：要求模型只返回 JSON，枚举列表由 TxCategory 生成。 */
+    /** 识别指令：要求逐条列出明细行，只返回 JSON。枚举列表由 TxCategory 生成。 */
     fun prompt(): String {
         val categories = TxCategory.entries.joinToString(", ") { "${it.name} ${it.label}" }
         return """
-            你是记账助手。请识别图片中的票据、账单或支付截图，归纳为一笔记录。
+            你是记账助手。请识别图片中的票据、账单或支付截图，逐条列出每一笔明细
+            （如购物小票的每个商品行、外卖订单的每一项、账单的每个分项）。
             只返回 JSON，不要任何其他文字，格式如下：
-            {"type":"EXPENSE","amount":"25.50","category":"FOOD","date":"2026-11-09","note":"摘要"}
+            {"items":[{"type":"EXPENSE","amount":"12.50","category":"FOOD","date":"2026-11-09","note":"宫保鸡丁"},{"type":"EXPENSE","amount":"3.00","category":"TRANSPORT","date":"2026-11-09","note":"地铁"}]}
             字段说明：
             - type："EXPENSE"（支出）或 "INCOME"（收入）
             - amount：金额（元），字符串，最多两位小数，不含货币符号
             - category：从以下枚举中选最匹配的一个：$categories
-            - date：票据日期，格式 yyyy-MM-dd；看不出日期时用今天
-            - note：不超过 30 字的消费摘要
+            - date：该明细的日期，格式 yyyy-MM-dd；看不出日期时用今天
+            - note：该明细的品名或摘要，不超过 30 字
+            - 无法拆分明细时（如单笔转账截图），items 里只放一条
         """.trimIndent()
     }
 
@@ -55,37 +57,56 @@ object ReceiptCodec {
     }
 
     /**
-     * 解析识别 JSON。各字段全部容错：
+     * 解析识别 JSON 为明细列表。各字段全部容错：
      * 金额接受字符串/数字、可带货币符号；分类按枚举名或中文标签匹配，未匹配降级「其他」；
-     * 日期解析失败用今天；解析不出金额返回 null（调用方报错）。
+     * 日期解析失败用今天；无有效金额的条目被丢弃。
+     * 兼容旧单条格式（无 items 数组但顶层有字段）。
      */
-    fun parse(json: String, todayEpochDay: Long): ReceiptParse? {
+    fun parseItems(json: String, todayEpochDay: Long): List<ReceiptParse> {
         val parsed = runCatching { receiptJson.decodeFromString(ReceiptJson.serializer(), json) }
-            .getOrNull() ?: return null
-        val amountMinor = parsed.amountMinor() ?: return null
-        val type = runCatching { TransactionType.valueOf(parsed.type.orEmpty()) }
-            .getOrDefault(TransactionType.EXPENSE)
-        val category = matchCategory(parsed.category, type)
-        return ReceiptParse(
-            type = type,
-            amountMinor = amountMinor,
-            category = category,
-            dateEpochDay = parsed.date?.let { MonthUtils.isoToDate(it) } ?: todayEpochDay,
-            note = parsed.note.orEmpty().take(50),
-        )
+            .getOrNull() ?: return emptyList()
+        val raw = if (parsed.items.isNotEmpty()) parsed.items else listOf(parsed.toItem())
+        return raw.mapNotNull { it.toParse(todayEpochDay) }
     }
 
     @Serializable
     private data class ReceiptJson(
+        val items: List<ItemJson> = emptyList(),
+        // 旧单条格式兼容
         val type: String? = null,
         // 模型可能返回字符串或数字，用 JsonPrimitive 兜住两种形态
         val amount: JsonPrimitive? = null,
         val category: String? = null,
         val date: String? = null,
         val note: String? = null,
+    ) {
+        fun toItem() = ItemJson(type, amount, category, date, note)
+    }
+
+    @Serializable
+    private data class ItemJson(
+        val type: String? = null,
+        val amount: JsonPrimitive? = null,
+        val category: String? = null,
+        val date: String? = null,
+        val note: String? = null,
     )
 
-    private fun ReceiptJson.amountMinor(): Long? {
+    private fun ItemJson.toParse(todayEpochDay: Long): ReceiptParse? {
+        val amountMinor = amountMinor() ?: return null
+        if (amountMinor <= 0L) return null // 0/负数金额视为无效明细
+        val type = runCatching { TransactionType.valueOf(type.orEmpty()) }
+            .getOrDefault(TransactionType.EXPENSE)
+        return ReceiptParse(
+            type = type,
+            amountMinor = amountMinor,
+            category = matchCategory(category, type),
+            dateEpochDay = date?.let { MonthUtils.isoToDate(it) } ?: todayEpochDay,
+            note = note.orEmpty().take(50),
+        )
+    }
+
+    private fun ItemJson.amountMinor(): Long? {
         val raw = amount?.content ?: return null
         // 去掉货币符号、千分位等非数字字符后按元解析
         val cleaned = raw.filter { it.isDigit() || it == '.' }

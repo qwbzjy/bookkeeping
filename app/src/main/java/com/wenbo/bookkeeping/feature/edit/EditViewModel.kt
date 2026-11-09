@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.wenbo.bookkeeping.core.amount.AmountFormat
 import com.wenbo.bookkeeping.data.db.TransactionEntity
 import com.wenbo.bookkeeping.data.llm.LlmClient
+import com.wenbo.bookkeeping.data.llm.ReceiptParse
 import com.wenbo.bookkeeping.di.AppContainer
 import com.wenbo.bookkeeping.domain.model.TransactionType
 import com.wenbo.bookkeeping.domain.model.TxCategory
@@ -27,6 +28,7 @@ data class EditUiState(
     val canSave: Boolean = false,
     val saved: Boolean = false, // 保存成功信号，Screen 观察后 popBackStack
     val scanning: Boolean = false, // 票据识别进行中
+    val scannedItems: List<ReceiptParse> = emptyList(), // 识别出的明细，待确认
 ) {
     val isEdit: Boolean get() = txId != -1L
 }
@@ -116,8 +118,8 @@ class EditViewModel(
     }
 
     /**
-     * 票据图片识别：相册选图 → 压缩 base64 → 调大模型 → 预填表单。
-     * 识别结果只做预填，用户确认/修改后再保存。
+     * 票据图片识别：相册选图 → 压缩 base64 → 调大模型 → 弹确认对话框逐条保存。
+     * 识别结果只入确认队列，用户勾选后才落库。
      */
     fun scanReceipt(uri: android.net.Uri) {
         if (_state.value.scanning) return
@@ -136,22 +138,40 @@ class EditViewModel(
                     _events.send("无法读取图片")
                     return@launch
                 }
-                val parse = LlmClient(config).analyzeReceipt(image.first, image.second)
-                _state.update { s ->
-                    val next = s.copy(
-                        type = parse.type,
-                        category = parse.category,
-                        amountText = AmountFormat.formatMinorToYuan(parse.amountMinor),
-                        dateEpochDay = parse.dateEpochDay,
-                        note = parse.note,
-                    )
-                    next.copy(canSave = refreshCanSave(next))
-                }
-                _events.send("识别完成，请确认后保存")
+                val items = LlmClient(config).analyzeReceipt(image.first, image.second)
+                _state.update { it.copy(scannedItems = items) }
             } catch (e: Exception) {
                 _events.send("识别失败：${e.message}")
             } finally {
                 _state.update { it.copy(scanning = false) }
+            }
+        }
+    }
+
+    /** 关闭确认对话框，放弃本次识别结果。 */
+    fun clearScannedItems() {
+        _state.update { it.copy(scannedItems = emptyList()) }
+    }
+
+    /** 批量保存勾选的明细，成功后关闭页面（明细页自动刷新）。 */
+    fun saveScannedItems(items: List<ReceiptParse>) {
+        if (items.isEmpty()) return
+        viewModelScope.launch {
+            try {
+                val entities = items.map {
+                    TransactionEntity(
+                        type = it.type,
+                        amountMinor = it.amountMinor,
+                        category = it.category.name,
+                        date = it.dateEpochDay,
+                        note = it.note,
+                    )
+                }
+                val dao = container.database.transactionDao()
+                entities.forEach { dao.insert(it) }
+                _state.update { it.copy(saved = true) }
+            } catch (e: Exception) {
+                _events.send("保存失败：${e.message}")
             }
         }
     }

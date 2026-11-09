@@ -17,16 +17,21 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -52,14 +57,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.wenbo.bookkeeping.core.amount.AmountFormat
 import com.wenbo.bookkeeping.core.time.MonthUtils
+import com.wenbo.bookkeeping.data.llm.ReceiptParse
 import com.wenbo.bookkeeping.di.LocalAppContainer
 import com.wenbo.bookkeeping.domain.model.TransactionType
 import com.wenbo.bookkeeping.domain.model.TxCategory
+import com.wenbo.bookkeeping.ui.components.CategoryBadge
+import com.wenbo.bookkeeping.ui.theme.ExpenseRed
+import com.wenbo.bookkeeping.ui.theme.IncomeGreen
 import com.wenbo.bookkeeping.ui.theme.TextSecondary
 import java.time.LocalDate
 
@@ -121,29 +132,31 @@ fun EditScreen(
                 ) { Text("收入") }
             }
 
-            // 票据识别：从相册选图交给大模型解析，预填下方表单
-            val pickImage = rememberLauncherForActivityResult(
-                ActivityResultContracts.PickVisualMedia(),
-            ) { uri -> uri?.let(viewModel::scanReceipt) }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                    },
-                    enabled = !state.scanning,
-                ) { Text("🖼️ 从图片识别") }
-                if (state.scanning) {
-                    Spacer(Modifier.width(12.dp))
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = "识别中…",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary,
-                    )
+            // 票据识别：从相册选图交给大模型解析逐条明细；编辑已有记录时不提供
+            if (!state.isEdit) {
+                val pickImage = rememberLauncherForActivityResult(
+                    ActivityResultContracts.PickVisualMedia(),
+                ) { uri -> uri?.let(viewModel::scanReceipt) }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
+                        enabled = !state.scanning,
+                    ) { Text("🖼️ 从图片识别明细") }
+                    if (state.scanning) {
+                        Spacer(Modifier.width(12.dp))
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "识别中…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
+                    }
                 }
             }
 
@@ -235,6 +248,92 @@ fun EditScreen(
             }
         }
     }
+
+    // 识别结果确认：逐条勾选后批量保存
+    if (state.scannedItems.isNotEmpty()) {
+        ReceiptReviewDialog(
+            items = state.scannedItems,
+            onSave = viewModel::saveScannedItems,
+            onDismiss = { viewModel.clearScannedItems() },
+        )
+    }
+}
+
+/**
+ * 识别结果确认对话框：默认全选，点击行切换勾选，确认后批量入库。
+ */
+@Composable
+private fun ReceiptReviewDialog(
+    items: List<ReceiptParse>,
+    onSave: (List<ReceiptParse>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // 以元素身份（内容）而非下标记录勾选，避免保存后集合复用错位
+    var selected by remember(items) {
+        mutableStateOf(items.map { it.amountMinor to it.note }.toSet())
+    }
+    val chosen = items.filter { (it.amountMinor to it.note) in selected }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("识别到 ${items.size} 条明细") },
+        text = {
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 420.dp),
+            ) {
+                items.forEachIndexed { index, item ->
+                    val key = item.amountMinor to item.note
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    selected = if (key in selected) selected - key else selected + key
+                                }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Checkbox(
+                                checked = key in selected,
+                                onCheckedChange = { checked ->
+                                    selected = if (checked) selected + key else selected - key
+                                },
+                            )
+                            CategoryBadge(item.category, size = 32)
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "${item.category.label}${if (item.note.isNotBlank()) " · ${item.note}" else ""}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    text = LocalDate.ofEpochDay(item.dateEpochDay).toString(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                )
+                            }
+                            Text(
+                                text = AmountFormat.formatMinorToYuan(item.amountMinor),
+                                style = MaterialTheme.typography.titleSmall,
+                                color = if (item.type == TransactionType.EXPENSE) ExpenseRed else IncomeGreen,
+                            )
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = chosen.isNotEmpty(),
+                onClick = { onSave(chosen) },
+            ) { Text("保存 ${chosen.size} 条") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        },
+    )
 }
 
 @Composable

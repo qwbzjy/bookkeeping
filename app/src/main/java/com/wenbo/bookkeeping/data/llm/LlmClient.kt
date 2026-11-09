@@ -11,12 +11,12 @@ import kotlinx.coroutines.withContext
  */
 class LlmClient(private val config: LlmConfig) {
 
-    /** 票据识别：图片 base64 → 结构化识别结果。 */
+    /** 票据识别：图片 base64 → 明细列表（一张票据可能拆出多条）。 */
     suspend fun analyzeReceipt(
         imageBase64: String,
         mediaType: String,
         todayEpochDay: Long = LocalDate.now().toEpochDay(),
-    ): ReceiptParse = withContext(Dispatchers.IO) {
+    ): List<ReceiptParse> = withContext(Dispatchers.IO) {
         val request = when (config.provider) {
             LlmProvider.OPENAI -> OpenAiCodec.receiptRequest(config, imageBase64, mediaType)
             LlmProvider.ANTHROPIC -> AnthropicCodec.receiptRequest(config, imageBase64, mediaType)
@@ -24,8 +24,9 @@ class LlmClient(private val config: LlmConfig) {
         val text = extractText(HttpTransport.post(request))
         val json = ReceiptCodec.extractJson(text)
             ?: throw IOException("模型返回中未找到 JSON")
-        ReceiptCodec.parse(json, todayEpochDay)
-            ?: throw IOException("识别结果缺少有效金额")
+        val items = ReceiptCodec.parseItems(json, todayEpochDay)
+        if (items.isEmpty()) throw IOException("识别结果中没有有效金额")
+        items
     }
 
     /** 连通性测试：返回模型回复文本。 */
