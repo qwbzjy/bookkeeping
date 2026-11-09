@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 票据图片识别需要调用大模型服务（用户自配 API Key，直连服务商） -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:name=".BookkeepingApp"
         android:allowBackup="true"

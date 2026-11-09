@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.wenbo.bookkeeping.core.amount.AmountFormat
 import com.wenbo.bookkeeping.data.db.TransactionEntity
+import com.wenbo.bookkeeping.data.llm.LlmClient
 import com.wenbo.bookkeeping.di.AppContainer
 import com.wenbo.bookkeeping.domain.model.TransactionType
 import com.wenbo.bookkeeping.domain.model.TxCategory
@@ -25,6 +26,7 @@ data class EditUiState(
     val note: String = "",
     val canSave: Boolean = false,
     val saved: Boolean = false, // 保存成功信号，Screen 观察后 popBackStack
+    val scanning: Boolean = false, // 票据识别进行中
 ) {
     val isEdit: Boolean get() = txId != -1L
 }
@@ -110,6 +112,47 @@ class EditViewModel(
             val dao = container.database.transactionDao()
             if (s.isEdit) dao.update(entity) else dao.insert(entity)
             _state.update { it.copy(saved = true) }
+        }
+    }
+
+    /**
+     * 票据图片识别：相册选图 → 压缩 base64 → 调大模型 → 预填表单。
+     * 识别结果只做预填，用户确认/修改后再保存。
+     */
+    fun scanReceipt(uri: android.net.Uri) {
+        if (_state.value.scanning) return
+        viewModelScope.launch {
+            _state.update { it.copy(scanning = true) }
+            try {
+                val config = container.llmSettings.load()
+                if (!config.isConfigured) {
+                    _events.send("请先在「设置」中配置大模型服务")
+                    return@launch
+                }
+                val image = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    container.readImageBase64(uri)
+                }
+                if (image == null) {
+                    _events.send("无法读取图片")
+                    return@launch
+                }
+                val parse = LlmClient(config).analyzeReceipt(image.first, image.second)
+                _state.update { s ->
+                    val next = s.copy(
+                        type = parse.type,
+                        category = parse.category,
+                        amountText = AmountFormat.formatMinorToYuan(parse.amountMinor),
+                        dateEpochDay = parse.dateEpochDay,
+                        note = parse.note,
+                    )
+                    next.copy(canSave = refreshCanSave(next))
+                }
+                _events.send("识别完成，请确认后保存")
+            } catch (e: Exception) {
+                _events.send("识别失败：${e.message}")
+            } finally {
+                _state.update { it.copy(scanning = false) }
+            }
         }
     }
 

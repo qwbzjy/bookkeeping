@@ -6,6 +6,7 @@
 
 ### ✍️ 记一笔
 - 支出 / 收入一键切换，18 个预置分类（emoji 图标）
+- **票据图片识别**：从相册选图，大模型自动解析类型/金额/分类/日期/备注并预填表单，确认后保存
 - 金额以「分」为单位存储（Long），杜绝浮点精度问题
 - 日期可选（默认今天），备注选填（50 字内）
 - 支持编辑已有记录、长按删除
@@ -27,6 +28,13 @@
 - 进度条实时显示当月已用比例，超支满格变红
 - 清空并保存即取消该分类预算
 
+### 🧠 大模型票据识别
+- 同时兼容 **OpenAI 兼容协议**（`/chat/completions`，方舟 / DeepSeek 等 OpenAI 兼容端点均可）与 **Anthropic 协议**（`/v1/messages`），在设置页切换
+- 配置项：接口地址（留空用官方默认）、API Key、模型名；带「测试连接」一键验证
+- 图片经降采样（长边 1280px）+ JPEG 压缩后 base64 上传，省 token
+- 模型回复严格解析 JSON 并逐字段容错（金额可带货币符号/千分位、分类支持中文标签、日期缺失回退今天）
+- 识别结果仅预填表单，用户确认后再保存
+
 ### 💾 备份
 - 导出 CSV（UTF-8 带 BOM，Excel 打开中文不乱码；RFC 4180 转义）
 - 导入为整体替换，带二次确认；坏行自动跳过并计数，未知分类降级为「其他」
@@ -42,7 +50,8 @@
 | 导航 | Navigation Compose type-safe 路由（`@Serializable` route） |
 | 架构 | MVVM（StateFlow UiState + Channel 一次性事件）+ 手写 DI（AppContainer + CompositionLocal） |
 | SDK | minSdk 26 / targetSdk 35 / compileSdk 36.1 |
-| 权限 | 无（数据全部仅存本机） |
+| 网络 | HttpURLConnection 零依赖直连大模型服务（INTERNET 权限），kotlinx-serialization 编解码 |
+| 权限 | INTERNET（票据识别调用大模型）、存储全部仅限本机 |
 
 ## 构建与运行
 
@@ -103,3 +112,5 @@ app/src/test/                              # 纯函数单测（金额/日期/聚
 - **统计不写 SQL**：数据量小，全量拉取后内存聚合（`StatsAggregator` 纯函数），聚合逻辑可 JUnit 直测
 - **CSV 容错**：解析为逐字符状态机（正确处理引号内逗号/换行/翻倍引号），单行脏数据不致整体失败
 - **SAF 收口**：备份读写 uri 经 `AppContainer.openBackupInput/Output` 统一处理，会话内一次性消费
+- **schema 演进**：v2 新增 `settings` 键值表（大模型配置）走显式 `MIGRATION_1_2`，升级不丢用户数据
+- **协议编解码纯函数化**：OpenAI/Anthropic 请求构造与响应提取、票据 JSON 解析全部与网络 IO 分离，可 JUnit 直测

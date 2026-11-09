@@ -1,5 +1,8 @@
 package com.wenbo.bookkeeping.feature.edit
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -19,13 +23,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -52,6 +60,7 @@ import com.wenbo.bookkeeping.core.time.MonthUtils
 import com.wenbo.bookkeeping.di.LocalAppContainer
 import com.wenbo.bookkeeping.domain.model.TransactionType
 import com.wenbo.bookkeeping.domain.model.TxCategory
+import com.wenbo.bookkeeping.ui.theme.TextSecondary
 import java.time.LocalDate
 
 /**
@@ -69,7 +78,11 @@ fun EditScreen(
         EditViewModel(container, txId)
     }
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
 
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { snackbarHostState.showSnackbar(it) }
+    }
     LaunchedEffect(state.saved) {
         if (state.saved) onClosed()
     }
@@ -85,6 +98,7 @@ fun EditScreen(
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
         Column(
             modifier = Modifier
@@ -105,6 +119,32 @@ fun EditScreen(
                     onClick = { viewModel.selectType(TransactionType.INCOME) },
                     shape = SegmentedButtonDefaults.itemShape(1, 2),
                 ) { Text("收入") }
+            }
+
+            // 票据识别：从相册选图交给大模型解析，预填下方表单
+            val pickImage = rememberLauncherForActivityResult(
+                ActivityResultContracts.PickVisualMedia(),
+            ) { uri -> uri?.let(viewModel::scanReceipt) }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        pickImage.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    enabled = !state.scanning,
+                ) { Text("🖼️ 从图片识别") }
+                if (state.scanning) {
+                    Spacer(Modifier.width(12.dp))
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "识别中…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary,
+                    )
+                }
             }
 
             // 分类网格（随收支类型切换）

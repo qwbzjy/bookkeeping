@@ -8,12 +8,18 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -24,9 +30,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.wenbo.bookkeeping.data.llm.LlmProvider
 import com.wenbo.bookkeeping.di.BACKUP_MIME
 import com.wenbo.bookkeeping.di.LocalAppContainer
 import com.wenbo.bookkeeping.ui.components.ConfirmDialog
@@ -64,9 +72,86 @@ fun SettingsScreen() {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
+                .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
+            Text(
+                text = "大模型识别",
+                style = MaterialTheme.typography.titleSmall,
+                color = TextSecondary,
+            )
+            Text(
+                text = "配置后在「记一笔」页可从票据图片自动识别分类与金额",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+            )
+            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = state.llmProvider == LlmProvider.OPENAI,
+                    onClick = { viewModel.updateLlmProvider(LlmProvider.OPENAI) },
+                    shape = SegmentedButtonDefaults.itemShape(0, 2),
+                ) { Text("OpenAI 兼容") }
+                SegmentedButton(
+                    selected = state.llmProvider == LlmProvider.ANTHROPIC,
+                    onClick = { viewModel.updateLlmProvider(LlmProvider.ANTHROPIC) },
+                    shape = SegmentedButtonDefaults.itemShape(1, 2),
+                ) { Text("Anthropic") }
+            }
+            OutlinedTextField(
+                value = state.llmBaseUrl,
+                onValueChange = viewModel::updateLlmBaseUrl,
+                label = { Text("接口地址（留空用官方默认）") },
+                placeholder = {
+                    Text(
+                        if (state.llmProvider == LlmProvider.OPENAI) {
+                            "https://api.openai.com/v1"
+                        } else {
+                            "https://api.anthropic.com"
+                        },
+                    )
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = state.llmApiKey,
+                onValueChange = viewModel::updateLlmApiKey,
+                label = { Text("API Key") },
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = state.llmModel,
+                onValueChange = viewModel::updateLlmModel,
+                label = { Text("模型名") },
+                placeholder = {
+                    Text(
+                        if (state.llmProvider == LlmProvider.OPENAI) {
+                            "如 gpt-4o-mini"
+                        } else {
+                            "如 claude-sonnet-4-5"
+                        },
+                    )
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Button(
+                    onClick = viewModel::saveLlmConfig,
+                    modifier = Modifier.weight(1f),
+                ) { Text("保存配置") }
+                OutlinedButton(
+                    onClick = viewModel::testLlmConnection,
+                    enabled = !state.busy,
+                    modifier = Modifier.weight(1f),
+                ) { Text(if (state.busy) "测试中…" else "测试连接") }
+            }
+
+            HorizontalDivider()
+
             Text(
                 text = "备份",
                 style = MaterialTheme.typography.titleSmall,
