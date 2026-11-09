@@ -19,10 +19,11 @@ object ImageCodec {
     /** 返回 (base64, mediaType)；读取或解码失败返回 null。 */
     fun readBase64(context: Context, uri: Uri): Pair<String, String>? {
         return runCatching {
+            // 第一步：只读尺寸。注意 inJustDecodeBounds 下 decodeStream 恒返回 null，
+            // 不能拿它的返回值判断流是否可读，要看 openInputStream 与 bounds.outWidth
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            context.contentResolver.openInputStream(uri)?.use {
-                BitmapFactory.decodeStream(it, null, bounds)
-            } ?: return null
+            val boundsStream = context.contentResolver.openInputStream(uri) ?: return null
+            boundsStream.use { BitmapFactory.decodeStream(it, null, bounds) }
             if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
 
             val sample = sampleSize(bounds.outWidth, bounds.outHeight)
