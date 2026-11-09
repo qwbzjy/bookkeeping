@@ -53,4 +53,11 @@ class AnthropicCodecTest {
         assertEquals("invalid x-api-key", AnthropicCodec.extractErrorMessage(response))
         assertNull(AnthropicCodec.extractErrorMessage("""{"content":[]}"""))
     }
+
+    @Test
+    fun `custom headers appended`() {
+        val withHeaders = config.copy(customHeaders = mapOf("X-Session-Id" to "abc123"))
+        assertEquals("abc123", AnthropicCodec.receiptRequest(withHeaders, "QUJD", "image/jpeg").headers["X-Session-Id"])
+        assertEquals("abc123", AnthropicCodec.pingRequest(withHeaders).headers["X-Session-Id"])
+    }
 }

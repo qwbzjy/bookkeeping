@@ -51,4 +51,19 @@ class OpenAiCodecTest {
         assertEquals("Incorrect API key", OpenAiCodec.extractErrorMessage(response))
         assertNull(OpenAiCodec.extractErrorMessage("""{"choices":[]}"""))
     }
+
+    @Test
+    fun `custom headers appended and can override defaults`() {
+        val withHeaders = config.copy(customHeaders = mapOf("X-Session-Id" to "abc123"))
+        val request = OpenAiCodec.receiptRequest(withHeaders, "QUJD", "image/jpeg")
+        assertEquals("abc123", request.headers["X-Session-Id"])
+        // 未配置时无自定义头
+        assertNull(OpenAiCodec.receiptRequest(config, "QUJD", "image/jpeg").headers["X-Session-Id"])
+    }
+
+    @Test
+    fun `ping request also carries custom headers`() {
+        val withHeaders = config.copy(customHeaders = mapOf("X-Session-Id" to "abc123"))
+        assertEquals("abc123", OpenAiCodec.pingRequest(withHeaders).headers["X-Session-Id"])
+    }
 }

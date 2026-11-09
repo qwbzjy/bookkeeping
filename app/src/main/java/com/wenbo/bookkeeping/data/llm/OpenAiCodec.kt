@@ -39,10 +39,11 @@ object OpenAiCodec {
         return HttpRequest(
             url = "${config.resolveBaseUrl()}/chat/completions",
             body = body,
+            // 自定义 header 后置合并：同名覆盖默认（便于接自定义鉴权网关）
             headers = mapOf(
                 "Content-Type" to "application/json",
                 "Authorization" to "Bearer ${config.apiKey}",
-            ),
+            ) + config.customHeaders,
         )
     }
 
@@ -63,7 +64,7 @@ object OpenAiCodec {
             headers = mapOf(
                 "Content-Type" to "application/json",
                 "Authorization" to "Bearer ${config.apiKey}",
-            ),
+            ) + config.customHeaders,
         )
     }
 

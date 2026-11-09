@@ -21,6 +21,9 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** 设置页 header 编辑行的 UI 模型（name/value 都可即时改，点保存才落库）。 */
+data class LlmHeaderUi(val name: String = "", val value: String = "")
+
 data class SettingsUiState(
     val busy: Boolean = false,
     val pendingImportRows: List<com.wenbo.bookkeeping.data.backup.BackupRow>? = null, // 二次确认前暂存
@@ -29,6 +32,7 @@ data class SettingsUiState(
     val llmBaseUrl: String = "",
     val llmApiKey: String = "",
     val llmModel: String = "",
+    val llmHeaders: List<LlmHeaderUi> = emptyList(),
 )
 
 class SettingsViewModel(private val container: AppContainer) : ViewModel() {
@@ -51,6 +55,7 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
                     llmBaseUrl = config.baseUrl,
                     llmApiKey = config.apiKey,
                     llmModel = config.model,
+                    llmHeaders = config.customHeaders.map { (k, v) -> LlmHeaderUi(k, v) },
                 )
             }
         }
@@ -67,30 +72,55 @@ class SettingsViewModel(private val container: AppContainer) : ViewModel() {
     fun updateLlmApiKey(text: String) = _state.update { it.copy(llmApiKey = text.trim()) }
     fun updateLlmModel(text: String) = _state.update { it.copy(llmModel = text.trim()) }
 
+    fun addLlmHeader() = _state.update { it.copy(llmHeaders = it.llmHeaders + LlmHeaderUi()) }
+
+    fun removeLlmHeader(index: Int) =
+        _state.update { it.copy(llmHeaders = it.llmHeaders.filterIndexed { i, _ -> i != index }) }
+
+    fun updateLlmHeaderName(index: Int, text: String) =
+        _state.update { s ->
+            s.copy(llmHeaders = s.llmHeaders.mapIndexed { i, h ->
+                if (i == index) h.copy(name = text.trim()) else h
+            })
+        }
+
+    fun updateLlmHeaderValue(index: Int, text: String) =
+        _state.update { s ->
+            s.copy(llmHeaders = s.llmHeaders.mapIndexed { i, h ->
+                if (i == index) h.copy(value = text) else h
+            })
+        }
+
+    private fun buildConfig(s: SettingsUiState) = LlmConfig(
+        provider = s.llmProvider,
+        baseUrl = s.llmBaseUrl,
+        apiKey = s.llmApiKey,
+        model = s.llmModel,
+        // 名字为空的行丢弃；保存时同名后者覆盖前者
+        customHeaders = s.llmHeaders
+            .filter { it.name.isNotBlank() }
+            .associate { it.name to it.value.trim() },
+    )
+
     /** 保存当前表单为大模型配置。 */
     fun saveLlmConfig() {
         viewModelScope.launch {
-            val s = _state.value
-            llmSettings.save(
-                LlmConfig(s.llmProvider, s.llmBaseUrl, s.llmApiKey, s.llmModel)
-            )
+            llmSettings.save(buildConfig(_state.value))
             _events.send("配置已保存")
         }
     }
 
     /** 连通性测试：用当前表单配置（未保存也能测）发一条纯文本请求。 */
     fun testLlmConnection() {
-        val s = _state.value
-        if (s.llmApiKey.isBlank() || s.llmModel.isBlank()) {
+        val config = buildConfig(_state.value)
+        if (config.apiKey.isBlank() || config.model.isBlank()) {
             _events.trySend("请先填写 API Key 与模型名")
             return
         }
         viewModelScope.launch {
             _state.update { it.copy(busy = true) }
             try {
-                val reply = LlmClient(
-                    LlmConfig(s.llmProvider, s.llmBaseUrl, s.llmApiKey, s.llmModel)
-                ).ping()
+                val reply = LlmClient(config).ping()
                 _events.send("连接正常，模型回复：${reply.take(20)}")
             } catch (e: Exception) {
                 _events.send("连接失败：${e.message}")

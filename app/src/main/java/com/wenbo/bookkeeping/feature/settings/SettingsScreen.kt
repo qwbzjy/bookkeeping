@@ -10,9 +10,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -23,6 +27,7 @@ import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -138,6 +143,40 @@ fun SettingsScreen() {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            // 自定义 Header：接自定义网关/代理时补充协议要求的头（如 session-id）
+            Text(
+                text = "自定义 Header",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+            )
+            state.llmHeaders.forEachIndexed { index, header ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    OutlinedTextField(
+                        value = header.name,
+                        onValueChange = { viewModel.updateLlmHeaderName(index, it) },
+                        label = { Text("名称") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OutlinedTextField(
+                        value = header.value,
+                        onValueChange = { viewModel.updateLlmHeaderValue(index, it) },
+                        label = { Text("值") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.weight(1.4f),
+                    )
+                    IconButton(onClick = { viewModel.removeLlmHeader(index) }) {
+                        Icon(Icons.Filled.Close, contentDescription = "删除此 Header")
+                    }
+                }
+            }
+            TextButton(onClick = viewModel::addLlmHeader) { Text("+ 添加 Header") }
+
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Button(
                     onClick = viewModel::saveLlmConfig,

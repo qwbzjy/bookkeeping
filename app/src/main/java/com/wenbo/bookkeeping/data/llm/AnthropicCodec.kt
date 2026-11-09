@@ -45,11 +45,12 @@ object AnthropicCodec {
         return HttpRequest(
             url = "${config.resolveBaseUrl()}/v1/messages",
             body = body,
+            // 自定义 header 后置合并：同名覆盖默认
             headers = mapOf(
                 "Content-Type" to "application/json",
                 "x-api-key" to config.apiKey,
                 "anthropic-version" to ANTHROPIC_VERSION,
-            ),
+            ) + config.customHeaders,
         )
     }
 
@@ -72,7 +73,7 @@ object AnthropicCodec {
                 "Content-Type" to "application/json",
                 "x-api-key" to config.apiKey,
                 "anthropic-version" to ANTHROPIC_VERSION,
-            ),
+            ) + config.customHeaders,
         )
     }
 
